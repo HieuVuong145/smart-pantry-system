@@ -1,0 +1,61 @@
+<mxfile host="app.diagrams.net" modified="2026-06-23T05:00:00.000Z" agent="Smart Pantry IoT" version="24.0.0">
+  <diagram id="data-sync" name="Lưu đồ đồng bộ">
+    <mxGraphModel dx="1000" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="&lt;b&gt;Hình 3.3: Lưu đồ đồng bộ dữ liệu thời gian thực (Real-time Sync)&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="150" y="20" width="450" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Components -->
+        <mxCell id="backend" value="&lt;b&gt;Backend Server&lt;/b&gt;&lt;br&gt;(Node.js)&lt;br&gt;&lt;br&gt;&lt;i&gt;inventoryService.js&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="80" y="120" width="160" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="firebase" value="&lt;b&gt;Firebase Realtime DB&lt;/b&gt;&lt;br&gt;&lt;br&gt;Node: /inventory" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="340" y="100" width="120" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mobile" value="&lt;b&gt;Mobile App&lt;/b&gt;&lt;br&gt;(React Native)&lt;br&gt;&lt;br&gt;&lt;i&gt;React State (useState)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="580" y="120" width="160" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ui_render" value="&lt;b&gt;Giao diện người dùng&lt;/b&gt;&lt;br&gt;(Re-render)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="590" y="280" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows -->
+        <mxCell id="edge1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#006600;" edge="1" parent="1" source="backend" target="firebase">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge1_label" value="1. Write (Admin SDK)&lt;br&gt;Update % tồn kho" style="edgeLabel;html=1;fontSize=11;fontColor=#006600;" vertex="1" connectable="0" parent="edge1">
+          <mxGeometry x="-0.2" y="15" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="edge2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#CC0000;dashed=1;dashPattern=4 4;" edge="1" parent="1" source="firebase" target="mobile">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge2_label" value="2. WebSocket Push&lt;br&gt;onValue() Event" style="edgeLabel;html=1;fontSize=11;fontColor=#CC0000;" vertex="1" connectable="0" parent="edge2">
+          <mxGeometry x="-0.1" y="15" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="edge3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#000099;" edge="1" parent="1" source="mobile" target="ui_render">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge3_label" value="3. Cập nhật State&lt;br&gt;(Zero-polling)" style="edgeLabel;html=1;fontSize=11;fontColor=#000099;" vertex="1" connectable="0" parent="edge3">
+          <mxGeometry x="-0.2" y="-20" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

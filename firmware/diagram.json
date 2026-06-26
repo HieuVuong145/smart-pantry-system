@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "author": "Smart Pantry IoT",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-cam",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "sensor-pir",
+      "id": "pir1",
+      "top": -120,
+      "left": 260,
+      "rotate": 0,
+      "attrs": {
+        "label": "PIR HC-SR501"
+      }
+    }
+  ],
+  "connections": [
+    ["pir1:OUT", "esp:13", "green", ["v20", "h-60"]],
+    ["pir1:VCC", "esp:5V", "red", ["v30", "h-120"]],
+    ["pir1:GND", "esp:GND.1", "black", ["v40", "h-140"]]
+  ]
+}

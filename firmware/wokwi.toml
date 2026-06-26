@@ -1,0 +1,7 @@
+# Smart Pantry — Wokwi Simulator Configuration
+# Dùng với Wokwi VS Code Extension hoặc wokwi.com
+
+[wokwi]
+version = 1
+firmware = ".pio/build/esp32cam/firmware.bin"
+elf = ".pio/build/esp32cam/firmware.elf"

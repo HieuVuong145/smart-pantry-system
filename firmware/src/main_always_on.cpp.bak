@@ -1,0 +1,641 @@
+/*
+ * Smart Pantry — ESP32-CAM Firmware (Tối giản)
+ * Board: ESP32-CAM Generic (tương thích AI-Thinker pinout)
+ *
+ * Phần cứng tối giản: ESP32-CAM + PIR HC-SR501 (chỉ 3 dây)
+ * Không cần LED strip ngoài — phòng bếp đã đủ sáng.
+ * Flash LED onboard (GPIO 4) chỉ dùng để nháy báo hiệu.
+ *
+ * Chức năng:
+ * - Deep sleep mặc định, PIR HC-SR501 trên GPIO 13 là wake source
+ * - Khi thức dậy: init WiFi → init Camera → chụp ảnh → gửi HTTP POST → deep
+ * sleep
+ * - Heartbeat: mỗi 30 phút thức dậy gửi status
+ */
+
+#include "driver/rtc_io.h"
+#include "esp_camera.h"
+#include "esp_sleep.h"
+#include <Arduino.h>
+#include <HTTPClient.h>
+#include <WebServer.h>
+#include <WiFi.h>
+
+// ==================== CẤU HÌNH ====================
+// WiFi
+const char *WIFI_SSID = "YOUR_WIFI_SSID";
+const char *WIFI_PASS = "YOUR_WIFI_PASSWORD";
+
+// Backend server
+const char *SERVER_URL = "http://YOUR_LAN_IP:3001/api/pantry/capture";
+const char *STATUS_URL = "http://YOUR_LAN_IP:3001/api/pantry/device";
+const char *DEVICE_ID = "device_001";
+const char *FAMILY_ID = "family_001";
+
+// Pin assignments (tối giản — chỉ cần PIR + Flash LED onboard)
+#define PIR_PIN GPIO_NUM_13      // PIR HC-SR501 OUT → wake source
+#define FLASH_LED_PIN GPIO_NUM_4 // Onboard flash LED (nháy báo hiệu)
+#define RED_LED_PIN                                                            \
+  GPIO_NUM_33 // Onboard red LED (sáng liên tục 2s báo hiệu có người)
+
+// Timing (microseconds for deep sleep)
+#define HEARTBEAT_INTERVAL_US 1800000000ULL // 30 phút = 1800 giây
+#define CAPTURE_DELAY_MS 2000               // Đợi 2s sau khi PIR trigger
+#define WIFI_TIMEOUT_MS 15000               // Timeout kết nối WiFi
+#define SERVER_TIMEOUT_MS 30000             // Timeout gửi ảnh
+
+// Camera pins — ESP32-CAM Generic (giống AI-Thinker)
+// Nếu board của bạn có pinout khác, thay đổi các giá trị này theo datasheet
+// Tra cứu: Google "[tên board ESP32-CAM của bạn] pinout"
+#define PWDN_GPIO_NUM 32
+#define RESET_GPIO_NUM -1
+#define XCLK_GPIO_NUM 0
+#define SIOD_GPIO_NUM 26
+#define SIOC_GPIO_NUM 27
+#define Y9_GPIO_NUM 35
+#define Y8_GPIO_NUM 34
+#define Y7_GPIO_NUM 39
+#define Y6_GPIO_NUM 36
+#define Y5_GPIO_NUM 21
+#define Y4_GPIO_NUM 19
+#define Y3_GPIO_NUM 18
+#define Y2_GPIO_NUM 5
+#define VSYNC_GPIO_NUM 25
+#define HREF_GPIO_NUM 23
+#define PCLK_GPIO_NUM 22
+
+// ==================== BIẾN TOÀN CỤC ====================
+
+RTC_DATA_ATTR int wakeCount = 0;  // Đếm số lần thức dậy (lưu qua deep sleep)
+RTC_DATA_ATTR int photoCount = 0; // Đếm số ảnh đã chụp
+
+// Web server cho MJPEG streaming
+WebServer server(80);
+const char *MJPEG_BOUNDARY = "BOUNDARY";
+bool mjpegRunning = false;
+
+// ==================== KHỞI TẠO CAMERA ====================
+
+bool initCamera() {
+  camera_config_t config;
+  config.ledc_channel = LEDC_CHANNEL_0;
+  config.ledc_timer = LEDC_TIMER_0;
+  config.pin_d0 = Y2_GPIO_NUM;
+  config.pin_d1 = Y3_GPIO_NUM;
+  config.pin_d2 = Y4_GPIO_NUM;
+  config.pin_d3 = Y5_GPIO_NUM;
+  config.pin_d4 = Y6_GPIO_NUM;
+  config.pin_d5 = Y7_GPIO_NUM;
+  config.pin_d6 = Y8_GPIO_NUM;
+  config.pin_d7 = Y9_GPIO_NUM;
+  config.pin_xclk = XCLK_GPIO_NUM;
+  config.pin_pclk = PCLK_GPIO_NUM;
+  config.pin_vsync = VSYNC_GPIO_NUM;
+  config.pin_href = HREF_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
+  config.pin_pwdn = PWDN_GPIO_NUM;
+  config.pin_reset = RESET_GPIO_NUM;
+  config.xclk_freq_hz = 20000000;
+  config.pixel_format = PIXFORMAT_JPEG;
+
+  // Chất lượng ảnh — tối ưu cho chất lượng (độ nét) và livestream
+  if (psramFound()) {
+    config.frame_size = FRAMESIZE_SVGA; // 800x600 - Rất nét
+    config.jpeg_quality =
+        12; // Tăng từ 10 lên 12 để giảm dung lượng file -> tăng FPS livestream
+    config.fb_count = 2; // 2 buffers giúp tối đa hoá FPS
+  } else {
+    config.frame_size = FRAMESIZE_VGA; // Fallback nếu không có PSRAM
+    config.jpeg_quality = 12;
+    config.fb_count = 1;
+  }
+  // GRAB_LATEST rất quan trọng để có FPS cao khi live stream, nó sẽ luôn lấy
+  // frame mới nhất thay vì chờ buffer rỗng (GRAB_WHEN_EMPTY)
+  config.grab_mode = CAMERA_GRAB_LATEST;
+
+  esp_err_t err = esp_camera_init(&config);
+  if (err != ESP_OK) {
+    Serial.printf("❌ Camera init failed: 0x%x\n", err);
+    return false;
+  }
+
+  // Điều chỉnh sensor
+  sensor_t *s = esp_camera_sensor_get();
+  s->set_brightness(s, 1); // Tăng sáng một chút
+  s->set_contrast(s, 1);   // Tăng contrast
+  s->set_saturation(s, 0);
+  s->set_whitebal(s, 1); // Auto white balance
+  s->set_awb_gain(s, 1);
+  s->set_aec2(s, 1); // Auto exposure
+  s->set_gainceiling(s, GAINCEILING_8X);
+
+  Serial.println("✅ Camera initialized");
+  return true;
+}
+
+// ==================== KẾT NỐI WIFI ====================
+
+bool connectWiFi() {
+  Serial.printf("📶 Connecting to WiFi: %s\n", WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.setSleep(false); // Tắt WiFi sleep để gửi nhanh hơn
+
+  unsigned long startTime = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    if (millis() - startTime > WIFI_TIMEOUT_MS) {
+      Serial.println("\n❌ WiFi connection timeout!");
+      return false;
+    }
+  }
+
+  Serial.printf("\n✅ WiFi connected! IP: %s\n",
+                WiFi.localIP().toString().c_str());
+  return true;
+}
+
+// ==================== FLASH LED (báo hiệu) ====================
+
+void flashLedBlink(int times, int delayMs) {
+  for (int i = 0; i < times; i++) {
+    digitalWrite(FLASH_LED_PIN, HIGH);
+    delay(delayMs);
+    digitalWrite(FLASH_LED_PIN, LOW);
+    delay(delayMs);
+  }
+}
+
+// ==================== CHỤP ẢNH & GỬI ====================
+
+// ==================== MJPEG STREAMING ====================
+
+void handleCamera() {
+  Serial.println("✅ /cam handler called");
+
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) {
+    Serial.println("❌ Camera capture failed!");
+    server.send(500, "text/plain", "Camera error");
+    return;
+  }
+
+  Serial.printf("📷 Sending JPEG: %d bytes\n", fb->len);
+  server.sendHeader("Content-Disposition", "inline; filename=frame.jpg");
+  server.send_P(200, "image/jpeg", (const char *)fb->buf, fb->len);
+  esp_camera_fb_return(fb);
+}
+
+// Khai báo trước hàm checkPIR để có thể gọi trong handleMjpegStream
+void checkPIR();
+
+void handleMjpegStream() {
+  Serial.println("✅ Stream handler called - received request!");
+
+  WiFiClient client = server.client();
+  client.setNoDelay(true); // Tắt Nagle algorithm → gửi frame ngay lập tức
+
+  String response = "HTTP/1.1 200 OK\r\n";
+  response += "Content-Type: multipart/x-mixed-replace; boundary=" +
+              String(MJPEG_BOUNDARY) + "\r\n";
+  response += "Access-Control-Allow-Origin: *\r\n";
+  response += "Connection: close\r\n\r\n";
+  client.print(response);
+
+  mjpegRunning = true;
+  uint32_t frameCount = 0;
+  uint32_t fpsTimer = millis();
+  float currentFps = 0;
+
+  while (client.connected() && mjpegRunning) {
+    // KHI ĐANG XEM LIVE STREAM, vòng lặp này sẽ block hàm loop().
+    // Do đó ta phải kiểm tra cảm biến PIR ở đây để đảm bảo PIR vẫn hoạt động!
+    checkPIR();
+
+    camera_fb_t *fb = esp_camera_fb_get();
+
+    if (!fb) {
+      Serial.println("❌ Camera capture failed in stream!");
+      break;
+    }
+
+    // Tính FPS thực tế
+    frameCount++;
+    if (millis() - fpsTimer >= 3000) {
+      currentFps = (float)frameCount / ((millis() - fpsTimer) / 1000.0);
+      Serial.printf("📹 Stream: %.1f FPS | Frame size: %d KB | Frames: %d\n",
+                    currentFps, fb->len / 1024, frameCount);
+      frameCount = 0;
+      fpsTimer = millis();
+    }
+
+    // Gửi MJPEG frame — dùng snprintf thay vì String để tiết kiệm RAM
+    char header[128];
+    int headerLen = snprintf(
+        header, sizeof(header),
+        "--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n",
+        MJPEG_BOUNDARY, fb->len);
+
+    // Gửi header + ảnh liên tục không delay
+    client.write((const uint8_t *)header, headerLen);
+    client.write(fb->buf, fb->len);
+    client.write((const uint8_t *)"\r\n", 2);
+
+    esp_camera_fb_return(fb);
+
+    // Không có delay() → ESP32 gửi frame nhanh nhất có thể
+    // yield() để watchdog timer không bị trigger
+    yield();
+  }
+
+  mjpegRunning = false;
+  Serial.printf("📹 MJPEG Stream ended (last FPS: %.1f)\n", currentFps);
+}
+
+void handleRoot() {
+  Serial.println("✅ Root handler called - received request!");
+
+  String html = R"HTML(
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Smart Pantry - Live Camera</title>
+    <meta http-equiv="refresh" content="2">
+    <style>
+        body { font-family: Arial; margin: 20px; background: #f0f0f0; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; text-align: center; margin: 0 0 20px 0; }
+        img { width: 100%; height: auto; border: 2px solid #ddd; border-radius: 5px; display: block; }
+        .info { text-align: center; color: #666; margin-top: 15px; font-size: 14px; }
+        .status { background: #e8f5e9; padding: 10px; border-radius: 5px; margin-top: 15px; color: #2e7d32; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍱 Smart Pantry - Live Camera</h1>
+        <img src="/cam" alt="Live Camera" onerror="this.src='/cam?t=' + Date.now();">
+        <div class="info">
+            <p>ESP32-CAM Live Camera Feed</p>
+        </div>
+        <div class="status">
+            ✅ IP: )HTML";
+
+  html += WiFi.localIP().toString();
+  html += R"HTML( | WiFi: Tiny Cafe
+        </div>
+    </div>
+</body>
+</html>
+    )HTML";
+
+  server.send(200, "text/html", html);
+  Serial.println("✅ HTML sent to client");
+}
+
+// ==================== BASE64 ENCODING ====================
+
+/**
+ * Base64 encoding table
+ */
+static const char base64_chars[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+String base64Encode(const uint8_t *data, size_t length) {
+  String encoded = "";
+  encoded.reserve(((length + 2) / 3) * 4);
+
+  int i = 0;
+  uint8_t byte3[3];
+  uint8_t byte4[4];
+
+  while (length--) {
+    byte3[i++] = *(data++);
+    if (i == 3) {
+      byte4[0] = (byte3[0] & 0xfc) >> 2;
+      byte4[1] = ((byte3[0] & 0x03) << 4) + ((byte3[1] & 0xf0) >> 4);
+      byte4[2] = ((byte3[1] & 0x0f) << 2) + ((byte3[2] & 0xc0) >> 6);
+      byte4[3] = byte3[2] & 0x3f;
+
+      for (i = 0; i < 4; i++)
+        encoded += base64_chars[byte4[i]];
+      i = 0;
+    }
+  }
+
+  if (i) {
+    for (int j = i; j < 3; j++)
+      byte3[j] = '\0';
+
+    byte4[0] = (byte3[0] & 0xfc) >> 2;
+    byte4[1] = ((byte3[0] & 0x03) << 4) + ((byte3[1] & 0xf0) >> 4);
+    byte4[2] = ((byte3[1] & 0x0f) << 2) + ((byte3[2] & 0xc0) >> 6);
+    byte4[3] = byte3[2] & 0x3f;
+
+    for (int j = 0; j < (i + 1); j++)
+      encoded += base64_chars[byte4[j]];
+
+    while (i++ < 3)
+      encoded += '=';
+  }
+
+  return encoded;
+}
+
+bool captureAndSend(const char *wakeReason) {
+  Serial.println("📷 Capturing photo...");
+
+  // Bật đèn Flash onboard (GPIO 4) để chống mờ nhoè (motion blur) và sáng rõ
+  // trong tủ
+  digitalWrite(FLASH_LED_PIN, HIGH);
+  // Đợi 200ms để sensor camera tự điều chỉnh Auto Exposure (AE) với ánh sáng
+  // mới
+  delay(200);
+
+  // Xả các khung hình cũ trong buffer (vì mình đã config fb_count = 2)
+  camera_fb_t *fb = NULL;
+  for (int i = 0; i < 2; i++) {
+    fb = esp_camera_fb_get();
+    if (fb)
+      esp_camera_fb_return(fb);
+  }
+
+  // Chụp Frame thật sự với Flash
+  fb = esp_camera_fb_get();
+
+  // Tắt Flash ngay lập tức
+  digitalWrite(FLASH_LED_PIN, LOW);
+
+  if (!fb) {
+    Serial.println("❌ Camera capture failed!");
+    return false;
+  }
+
+  Serial.printf("📷 Photo captured: %d bytes (%dx%d)\n", fb->len, fb->width,
+                fb->height);
+  photoCount++;
+
+  // Encode base64
+  Serial.println("🔄 Encoding base64...");
+  String base64Image = base64Encode(fb->buf, fb->len);
+  esp_camera_fb_return(fb);
+
+  Serial.printf("📤 Sending to server (%d bytes base64)...\n",
+                base64Image.length());
+
+  // Gửi HTTP POST
+  HTTPClient http;
+  http.begin(SERVER_URL);
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(SERVER_TIMEOUT_MS);
+
+  // Build JSON payload (Tối ưu RAM để tránh bị cắt cụt chuỗi khi ảnh lớn)
+  String jsonPayload;
+  jsonPayload.reserve(base64Image.length() + 256);
+  jsonPayload = "{";
+  jsonPayload += "\"deviceId\":\"" + String(DEVICE_ID) + "\",";
+  jsonPayload += "\"familyId\":\"" + String(FAMILY_ID) + "\",";
+  jsonPayload += "\"motionEvent\":\"motion_detected\",";
+  jsonPayload += "\"wakeReason\":\"" + String(wakeReason) + "\",";
+  jsonPayload += "\"wakeCount\":" + String(wakeCount) + ",";
+  jsonPayload += "\"photoCount\":" + String(photoCount) + ",";
+  jsonPayload += "\"imageBase64\":\"" + base64Image + "\"";
+  jsonPayload += "}";
+
+  int httpCode = http.POST(jsonPayload);
+
+  if (httpCode > 0) {
+    Serial.printf("✅ Server response: %d\n", httpCode);
+    String response = http.getString();
+    Serial.println(response.substring(0, 200)); // Print first 200 chars
+  } else {
+    Serial.printf("❌ HTTP error: %s\n", http.errorToString(httpCode).c_str());
+  }
+
+  http.end();
+  base64Image = ""; // Free memory
+
+  return httpCode == 200;
+}
+
+// ==================== GỬI HEARTBEAT ====================
+
+void sendHeartbeat() {
+  Serial.println("💓 Sending heartbeat status...");
+
+  HTTPClient http;
+  String url = String(STATUS_URL);
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(10000);
+
+  String json = "{";
+  json += "\"deviceId\":\"" + String(DEVICE_ID) + "\",";
+  json += "\"familyId\":\"" + String(FAMILY_ID) + "\",";
+  json += "\"status\":\"online\",";
+  json += "\"wakeCount\":" + String(wakeCount) + ",";
+  json += "\"photoCount\":" + String(photoCount) + ",";
+  json += "\"freeHeap\":" + String(ESP.getFreeHeap()) + ",";
+  json += "\"uptimeMs\":" + String(millis());
+  json += "}";
+
+  int httpCode = http.POST(json);
+  Serial.printf("💓 Heartbeat response: %d\n", httpCode);
+  http.end();
+}
+
+// ==================== DEEP SLEEP ====================
+
+void enterDeepSleep() {
+  Serial.println("😴 Entering deep sleep...");
+  Serial.flush();
+
+  // Cấu hình wake source: PIR trên GPIO 13 (ext0 wake khi HIGH)
+  esp_sleep_enable_ext0_wakeup(PIR_PIN, 1); // 1 = HIGH level wake
+
+  // Timer wake cho heartbeat (30 phút)
+  esp_sleep_enable_timer_wakeup(HEARTBEAT_INTERVAL_US);
+
+  // Tắt flash LED trước khi ngủ
+  digitalWrite(FLASH_LED_PIN, LOW);
+
+  // Disconnect WiFi
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+
+  // Vào deep sleep
+  esp_deep_sleep_start();
+}
+
+// ==================== GỬI IP CAMERA LÊN BACKEND ====================
+
+void reportCameraIp() {
+  Serial.println("📤 Reporting camera IP to backend...");
+
+  HTTPClient http;
+  // Construct URL: http://YOUR_LAN_IP:3001/api/pantry/device/device_001/ip
+  String baseUrl = "http://YOUR_LAN_IP:3001/api/pantry/device/";
+  baseUrl += String(DEVICE_ID);
+  baseUrl += "/ip";
+
+  http.begin(baseUrl);
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(10000);
+
+  String json = "{\"ip\":\"";
+  json += WiFi.localIP().toString();
+  json += "\"}";
+
+  int httpCode = http.PUT(json);
+
+  if (httpCode > 0) {
+    Serial.printf("✅ Camera IP reported: %s (response: %d)\n",
+                  WiFi.localIP().toString().c_str(), httpCode);
+  } else {
+    Serial.printf("⚠️ Failed to report IP: %s (will retry on next loop)\n",
+                  http.errorToString(httpCode).c_str());
+  }
+
+  http.end();
+}
+
+// ==================== SETUP (chạy 1 lần khi boot) ====================
+
+void setup() {
+  Serial.begin(115200);
+  delay(100);
+
+  wakeCount++;
+
+  // Cấu hình GPIO
+  pinMode(FLASH_LED_PIN, OUTPUT);
+  digitalWrite(FLASH_LED_PIN, LOW);
+
+  pinMode(RED_LED_PIN, OUTPUT);
+  digitalWrite(RED_LED_PIN,
+               HIGH); // LED Đỏ trên ESP32 thường là Active LOW (HIGH = Tắt)
+
+  pinMode(PIR_PIN, INPUT); // PIR HC-SR501 OUT pin
+
+  Serial.println("\n========================================");
+  Serial.println("🍱 Smart Pantry — ESP32-CAM");
+  Serial.printf("   Wake #%d | Photos: %d\n", wakeCount, photoCount);
+  Serial.println("========================================");
+
+  // Init Camera
+  Serial.println("📱 Initializing camera...");
+  if (initCamera()) {
+    Serial.println("✅ Camera initialized!");
+  } else {
+    Serial.println("❌ Camera init failed!");
+  }
+
+  // Connect WiFi
+  Serial.println("📱 Connecting to WiFi...");
+  if (!connectWiFi()) {
+    Serial.println("❌ WiFi connection failed!");
+  }
+
+  // Start MJPEG web server (luôn chạy để mobile app xem live)
+  Serial.println("🌐 Starting HTTP server for live streaming...");
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/cam", HTTP_GET, handleCamera);
+  server.on("/stream", HTTP_GET, handleMjpegStream);
+  server.begin();
+  Serial.println("✅ HTTP Server started!");
+
+  Serial.printf("📹 Stream URL: http://%s/stream\n",
+                WiFi.localIP().toString().c_str());
+  Serial.printf("📷 Single frame: http://%s/cam\n",
+                WiFi.localIP().toString().c_str());
+  Serial.println("========================================\n");
+
+  // Gửi IP camera lên backend để mobile app biết địa chỉ
+  if (WiFi.status() == WL_CONNECTED) {
+    reportCameraIp();
+  }
+
+  Serial.println("👁️ PIR sensor active on GPIO 13 — waiting for motion...");
+}
+
+// ==================== LOOP ====================
+
+// Trạng thái PIR (chống trigger liên tục)
+static bool pirTriggered = false;
+static uint32_t pirCooldownEnd = 0;
+const uint32_t PIR_COOLDOWN_MS = 45000; // Chờ 45s sau mỗi lần PIR trigger
+
+void checkPIR() {
+  // Đọc tín hiệu PIR
+  int pirState = digitalRead(PIR_PIN);
+
+  if (pirState == HIGH && !pirTriggered && millis() > pirCooldownEnd) {
+    // PIR phát hiện chuyển động!
+    pirTriggered = true;
+    Serial.println("\n👋 PIR: Motion detected!");
+    Serial.println("⏳ Waiting 2s for person to finish interacting...");
+
+    // Đợi 2 giây để người dùng lấy/đặt đồ xong rồi mới chụp
+    digitalWrite(RED_LED_PIN, LOW); // Bật LED đỏ báo hiệu đã thấy người
+    delay(CAPTURE_DELAY_MS);
+
+    // Chụp ảnh với Flash và gửi lên backend
+    if (WiFi.status() == WL_CONNECTED) {
+      flashLedBlink(1, 100); // Nháy LED báo hiệu đang chụp
+      captureAndSend("pir");
+    } else {
+      Serial.println("⚠️ WiFi disconnected, trying to reconnect...");
+      connectWiFi();
+    }
+
+    // Tắt đèn LED đỏ
+    digitalWrite(RED_LED_PIN, HIGH);
+
+    // Bắt đầu cooldown (tránh chụp liên tục khi người vẫn đứng gần)
+    pirCooldownEnd = millis() + PIR_COOLDOWN_MS;
+    Serial.printf("⏳ PIR cooldown: %d seconds\n", PIR_COOLDOWN_MS / 1000);
+  }
+
+  if (pirState == LOW && pirTriggered) {
+    pirTriggered = false; // Reset khi PIR không còn phát hiện chuyển động
+  }
+}
+
+void loop() {
+  // Luôn xử lý HTTP requests (để live stream hoạt động liên tục)
+  server.handleClient();
+
+  // Debug log mỗi 10 giây
+  static uint32_t lastDebug = 0;
+  if (millis() - lastDebug > 10000) {
+    lastDebug = millis();
+    Serial.printf("🔄 Loop running... WiFi: %s | PIR: %s\n",
+                  WiFi.status() == WL_CONNECTED ? "OK" : "DISCONNECTED",
+                  digitalRead(PIR_PIN) == HIGH ? "MOTION" : "idle");
+  }
+
+  // Luôn kiểm tra PIR ở vòng lặp chính
+  checkPIR();
+
+  // Auto reconnect WiFi nếu mất kết nối
+  static uint32_t lastWifiCheck = 0;
+  if (millis() - lastWifiCheck > 30000) {
+    lastWifiCheck = millis();
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("📶 WiFi disconnected! Reconnecting...");
+      connectWiFi();
+      if (WiFi.status() == WL_CONNECTED) {
+        reportCameraIp(); // Gửi lại IP mới nếu có
+      }
+    }
+  }
+
+  // Heartbeat mỗi 5 phút
+  static uint32_t lastHeartbeat = 0;
+  if (millis() - lastHeartbeat > 300000) {
+    lastHeartbeat = millis();
+    if (WiFi.status() == WL_CONNECTED) {
+      sendHeartbeat();
+    }
+  }
+}

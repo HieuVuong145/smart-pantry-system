@@ -1,0 +1,33 @@
+{
+  "name": "smart-pantry-backend",
+  "version": "2.1.0",
+  "description": "Smart Pantry IoT - Backend server for food inventory tracking with pantry rack camera",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "iot",
+    "smart-pantry",
+    "food-tracking",
+    "esp32-cam"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@google/genai": "^2.9.0",
+    "axios": "^1.7.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.0",
+    "expo-server-sdk": "^6.1.0",
+    "express": "^5.2.1",
+    "firebase-admin": "^13.7.0",
+    "mqtt": "^5.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

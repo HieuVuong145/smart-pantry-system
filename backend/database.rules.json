@@ -1,0 +1,23 @@
+{
+  "rules": {
+    ".read": "true",
+    ".write": "true",
+    "inventory": {
+      ".indexOn": ["familyId", "name"]
+    },
+    "activity_logs": {
+      ".indexOn": ["familyId", "timestamp"]
+    },
+    "undefined_items": {
+      "$familyId": {
+        ".indexOn": ["defined"]
+      }
+    },
+    "meals": {
+      ".indexOn": ["familyId"]
+    },
+    "pantry_device": {
+      ".indexOn": ["familyId"]
+    }
+  }
+}
