@@ -87,7 +87,7 @@ bool initCamera() {
   config.pixel_format = PIXFORMAT_JPEG;
 
   if (psramFound()) {
-    config.frame_size = FRAMESIZE_SVGA; // 800x600 - Rất nét
+    config.frame_size = FRAMESIZE_SVGA; // 800x600
     config.jpeg_quality = 12; 
     config.fb_count = 2; // Dùng 2 buffer để xả frame cho ảnh sáng
   } else {
@@ -188,7 +188,7 @@ String base64Encode(const uint8_t *data, size_t length) {
 bool captureAndSend(const char *wakeReason) {
   Serial.println("📷 Capturing photo...");
 
-  // Bật đèn Flash onboard (GPIO 4) để chống mờ nhoè và chụp rõ trong tối
+  // Bật đèn Flash onboard (GPIO 4)
   digitalWrite(FLASH_LED_PIN, HIGH);
   delay(200); // Chờ sensor điều chỉnh phơi sáng
 
@@ -203,7 +203,7 @@ bool captureAndSend(const char *wakeReason) {
   // Chụp Frame thật sự
   fb = esp_camera_fb_get();
   
-  // Tắt Flash ngay lập tức để tiết kiệm điện
+  // Tắt Flash
   digitalWrite(FLASH_LED_PIN, LOW);
 
   if (!fb) {
@@ -284,7 +284,7 @@ void setup() {
   pinMode(RED_LED_PIN, OUTPUT);
   digitalWrite(RED_LED_PIN, HIGH); // Tắt LED đỏ
   
-  // Quan trọng: Phải cấu hình chân PIR thành INPUT với PULLDOWN hoặc external pulldown
+  // cấu hình chân PIR thành INPUT với PULLDOWN hoặc external pulldown
   pinMode(PIR_PIN, INPUT);
 
   Serial.println("\n========================================");
@@ -312,14 +312,14 @@ void setup() {
     case ESP_SLEEP_WAKEUP_TIMER:
       Serial.println("⏱️ Wakeup caused by Timer (1 hour snapshot)!");
       wakeReasonStr = "timer_snapshot";
-      // Đã chụp ảnh timer rồi thì không đặt timer tiếp nữa, chỉ chờ PIR
+      // Đã chụp ảnh timer rồi thì không đặt timer tiếp, chỉ chờ PIR
       setupTimer = false;
       break;
 
     default:
       Serial.printf("🔌 Wakeup caused by reset or power-on (%d)\n", wakeup_reason);
       wakeReasonStr = "power_on";
-      // Power on → Chụp 1 phát khởi tạo rồi đặt timer 1 tiếng
+      // Power on → Chụp khởi tạo rồi đặt timer 1 tiếng
       setupTimer = true;
       break;
   }
@@ -330,19 +330,19 @@ void setup() {
       // 3. CHỤP VÀ GỬI ẢNH
       captureAndSend(wakeReasonStr.c_str());
       
-      // Báo IP (thực ra không có Live stream, nhưng cứ gửi để backend update lastActive)
+      // Báo IP
       reportCameraIp();
     } else {
       Serial.println("❌ Could not connect to WiFi. Skipping capture.");
     }
   }
 
-  // 4. QUAY LẠI DEEP SLEEP
+  // 4. ENTER DEEP SLEEP
   Serial.println("😴 Entering Deep Sleep...");
   Serial.flush();
 
-  // Luôn luôn cấu hình thức dậy bằng PIR (chạm cạnh)
-  esp_sleep_enable_ext0_wakeup(PIR_PIN, 1); // 1 = High
+  // Luôn luôn cấu hình thức dậy bằng PIR
+  esp_sleep_enable_ext0_wakeup(PIR_PIN, 1); // 1 = High, gửi tín hiệu cho ESP32
 
   // Nếu vừa được kích hoạt bởi PIR hoặc Power On, đặt thêm Timer 1 tiếng
   if (setupTimer) {
@@ -361,10 +361,4 @@ void setup() {
 
   // Ngủ sâu
   esp_deep_sleep_start();
-}
-
-// ==================== LOOP ====================
-
-void loop() {
-  // Không bao giờ chạy đến đây
 }
