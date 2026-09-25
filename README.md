@@ -21,11 +21,11 @@ Cách hoạt động cực kỳ đơn giản: Khi có người mở tủ lấy �
 
 ## Tính năng nổi bật
 
-- ** Tối ưu năng lượng mức phần cứng (Ultra-Low Power)**: Vi điều khiển liên tục ngủ sâu (chỉ ăn khoảng `~10µA`) và chỉ bị đánh thức bởi ngắt cứng (Hardware Interrupt) của cảm biến PIR hoặc đồng hồ RTC.
-- ** Xử lý nhiễu ảnh thông minh**: Khắc phục lỗi thiếu sáng của cảm biến OV2640 bằng cách tự động xả 2 khung hình đầu tiên (flush PSRAM buffers) để camera kịp điều chỉnh cân bằng trắng (AWB) và tự phơi sáng (AE) trước khi chụp bức ảnh thật.
-- ** Prompt AI theo chuỗi tư duy (Chain-of-Thought)**: Không cho AI đoán mò % dung tích. Bắt buộc AI phải đưa ra lập luận (soi nắp ở đâu, đáy ở đâu, mức nước ở đâu) trước khi trả về con số JSON.
-- ** Nhận diện với người dùng làm trung tâm (Human-in-the-Loop)**: Nếu AI thấy một lọ đồ lạ không nhãn mác, nó sẽ đánh dấu lại để người dùng vào App tự định nghĩa (ví dụ: "Đây là lọ muối bột canh"). Từ lần sau, AI sẽ nhớ để nhận diện cho đúng.
-- ** Đồng bộ App & Thông báo thời gian thực**: App mobile viết bằng Expo/React Native đồng bộ data trực tiếp qua Firebase, gửi Push Notification báo mua thêm đồ khi đồ ăn dưới mức báo động.
+- Tối ưu năng lượng mức phần cứng (Ultra-Low Power): Vi điều khiển liên tục ngủ sâu (chỉ ăn khoảng `~10µA`) và chỉ bị đánh thức bởi ngắt cứng (Hardware Interrupt) của cảm biến PIR hoặc đồng hồ RTC.
+- Xử lý nhiễu ảnh thông minh: Khắc phục lỗi thiếu sáng của cảm biến OV2640 bằng cách tự động xả 2 khung hình đầu tiên (flush PSRAM buffers) để camera kịp điều chỉnh cân bằng trắng (AWB) và tự phơi sáng (AE) trước khi chụp bức ảnh thật.
+- Prompt AI theo chuỗi tư duy (Chain-of-Thought): Không cho AI đoán mò % dung tích. Bắt buộc AI phải đưa ra lập luận (soi nắp ở đâu, đáy ở đâu, mức nước ở đâu) trước khi trả về con số JSON.
+- Nhận diện với người dùng làm trung tâm (Human-in-the-Loop): Nếu AI thấy một lọ đồ lạ không nhãn mác, nó sẽ đánh dấu lại để người dùng vào App tự định nghĩa (ví dụ: "Đây là lọ muối bột canh"). Từ lần sau, AI sẽ nhớ để nhận diện cho đúng.
+- Đồng bộ App & Thông báo thời gian thực: App mobile viết bằng Expo/React Native đồng bộ data trực tiếp qua Firebase, gửi Push Notification báo mua thêm đồ khi đồ ăn dưới mức báo động.
 
 ---
 
