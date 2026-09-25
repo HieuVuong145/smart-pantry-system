@@ -1,4 +1,4 @@
-# 🍱 Smart Pantry System — Hệ thống Quản lý Tủ đồ ăn thông minh bằng AI Vision
+# Smart Pantry System — Hệ thống Quản lý Tủ đồ ăn thông minh bằng AI Vision
 
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-F05032?style=for-the-badge&logo=PlatformIO&logoColor=white)](#)
 [![ESP32](https://img.shields.io/badge/ESP32-E7352C?style=for-the-badge&logo=espressif&logoColor=white)](#)
@@ -11,7 +11,7 @@
 
 ---
 
-## 🌟 Tổng quan dự án
+## Tổng quan dự án
 
 **Smart Pantry System** là giải pháp tự động hóa việc quản lý đồ ăn trong gia đình. Các tủ lạnh thông minh hiện nay thường bắt người dùng phải quét mã vạch hoặc nhập tay rất mất thời gian. Dự án này giải quyết vấn đề đó bằng một module **ESP32-CAM** nhỏ gọn gắn trên giá để đồ.
 
@@ -19,22 +19,22 @@ Cách hoạt động cực kỳ đơn giản: Khi có người mở tủ lấy �
 
 ---
 
-## ✨ Tính năng nổi bật
+## Tính năng nổi bật
 
-- **🔋 Tối ưu năng lượng mức phần cứng (Ultra-Low Power)**: Vi điều khiển liên tục ngủ sâu (chỉ ăn khoảng `~10µA`) và chỉ bị đánh thức bởi ngắt cứng (Hardware Interrupt) của cảm biến PIR hoặc đồng hồ RTC.
-- **📷 Xử lý nhiễu ảnh thông minh**: Khắc phục lỗi thiếu sáng của cảm biến OV2640 bằng cách tự động xả 2 khung hình đầu tiên (flush PSRAM buffers) để camera kịp điều chỉnh cân bằng trắng (AWB) và tự phơi sáng (AE) trước khi chụp bức ảnh thật.
-- **🧠 Prompt AI theo chuỗi tư duy (Chain-of-Thought)**: Không cho AI đoán mò % dung tích. Bắt buộc AI phải đưa ra lập luận (soi nắp ở đâu, đáy ở đâu, mức nước ở đâu) trước khi trả về con số JSON.
-- **🧑‍🤝‍🧑 Nhận diện với người dùng làm trung tâm (Human-in-the-Loop)**: Nếu AI thấy một lọ đồ lạ không nhãn mác, nó sẽ đánh dấu lại để người dùng vào App tự định nghĩa (ví dụ: "Đây là lọ muối bột canh"). Từ lần sau, AI sẽ nhớ để nhận diện cho đúng.
-- **📲 Đồng bộ App & Thông báo thời gian thực**: App mobile viết bằng Expo/React Native đồng bộ data trực tiếp qua Firebase, gửi Push Notification báo mua thêm đồ khi đồ ăn dưới mức báo động.
+- ** Tối ưu năng lượng mức phần cứng (Ultra-Low Power)**: Vi điều khiển liên tục ngủ sâu (chỉ ăn khoảng `~10µA`) và chỉ bị đánh thức bởi ngắt cứng (Hardware Interrupt) của cảm biến PIR hoặc đồng hồ RTC.
+- ** Xử lý nhiễu ảnh thông minh**: Khắc phục lỗi thiếu sáng của cảm biến OV2640 bằng cách tự động xả 2 khung hình đầu tiên (flush PSRAM buffers) để camera kịp điều chỉnh cân bằng trắng (AWB) và tự phơi sáng (AE) trước khi chụp bức ảnh thật.
+- ** Prompt AI theo chuỗi tư duy (Chain-of-Thought)**: Không cho AI đoán mò % dung tích. Bắt buộc AI phải đưa ra lập luận (soi nắp ở đâu, đáy ở đâu, mức nước ở đâu) trước khi trả về con số JSON.
+- ** Nhận diện với người dùng làm trung tâm (Human-in-the-Loop)**: Nếu AI thấy một lọ đồ lạ không nhãn mác, nó sẽ đánh dấu lại để người dùng vào App tự định nghĩa (ví dụ: "Đây là lọ muối bột canh"). Từ lần sau, AI sẽ nhớ để nhận diện cho đúng.
+- ** Đồng bộ App & Thông báo thời gian thực**: App mobile viết bằng Expo/React Native đồng bộ data trực tiếp qua Firebase, gửi Push Notification báo mua thêm đồ khi đồ ăn dưới mức báo động.
 
 ---
 
-## 🏗️ Sơ đồ Kiến trúc Hệ thống
+## Sơ đồ Kiến trúc Hệ thống
 
 ```text
 [ESP32-CAM (Thiết bị IoT)] 
        │ 
-  (Thức dậy khi có người) 
+  (Thức dậy khi có người chuyển động - coi như là lấy nguyên liệu) 
        │
        ▼ (Gửi ảnh Base64 SVGA qua HTTP POST)
        │
@@ -49,7 +49,7 @@ Cách hoạt động cực kỳ đơn giản: Khi có người mở tủ lấy �
 
 ---
 
-## 🔌 Sơ đồ nối dây (Pinout)
+## Sơ đồ nối dây (Pinout)
 
 - **Vi điều khiển**: ESP32-CAM (Module AI-Thinker)
 - **Cảm biến**: Cảm biến chuyển động PIR HC-SR501
@@ -64,7 +64,7 @@ Cách hoạt động cực kỳ đơn giản: Khi có người mở tủ lấy �
 
 ---
 
-## 🚀 Hướng dẫn cài đặt (Getting Started)
+## Hướng dẫn cài đặt (Getting Started)
 
 ### 1. Nạp code Firmware (ESP32-CAM)
 1. Cài đặt extension [PlatformIO](https://platformio.org/) trên VS Code.
@@ -94,13 +94,3 @@ Cách hoạt động cực kỳ đơn giản: Khi có người mở tủ lấy �
 3. Khởi động app: `npx expo start` (Quét mã QR bằng ứng dụng Expo Go trên điện thoại).
 
 ---
-
-## 📸 Demo thực tế & Ảnh màn hình
-
-> *(Bạn hãy thay thế các link ảnh placeholder này bằng ảnh thực tế của project nhé)*
-
-![Giao diện App](https://via.placeholder.com/200x400?text=Anh+Chup+App)
-![Lắp ráp phần cứng](https://via.placeholder.com/300x200?text=Anh+Phan+Cung+Thuc+Te)
-
----
-*Dự án được phát triển với niềm đam mê dành cho IoT & Hệ thống nhúng ❤️*
